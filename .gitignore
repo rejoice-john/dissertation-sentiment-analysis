@@ -1,0 +1,20 @@
+# data folder — raw CSVs stay local only
+dissertation_data/
+
+# python junk files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# spyder project files
+.spyproject/
+.spyderproject.cfg
+
+# environment files
+.env
+venv/
+
+# system files
+.DS_Store
+Thumbs.db
