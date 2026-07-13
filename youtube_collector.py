@@ -10,7 +10,7 @@ from googleapiclient.errors import HttpError
 API_KEY = 'AIzaSyBvf9xun-n-8tc-ZGfIcvYl21QUBOwZnv8'
 
 COMMENTS_PER_PAGE = 100
-OUTPUT_DIR = 'data'
+OUTPUT_DIR = r'C:\Users\rejoi\OneDrive - Coventry University\dissertation-sentiment-analysis\dissertation_data'
 RETRY_LIMIT = 5
 WINDOW_DAYS = 365
 PROGRESS_EVERY = 25   # print a progress line every 25 pages while paging
