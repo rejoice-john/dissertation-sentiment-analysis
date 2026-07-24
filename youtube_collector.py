@@ -16,7 +16,7 @@ WINDOW_DAYS = 365
 PROGRESS_EVERY = 25   # print a progress line every 25 pages while paging
 
 # Each series is a list of video specs, targeting 5000 comments per series
-# where the video(s) have enough within the 12-month window.
+# where the video have enough within the 12-month window.
 VIDEO_IDS = {
     'baby_reindeer': [
         {'id': 'eafm1gB6SCM', 'target': 2200},   # official trailer, 2221 total on video
@@ -44,3 +44,49 @@ def anonymise(author_name):
 
 def parse_time(value):
     return datetime.fromisoformat(value.replace('Z', '+00:00'))
+
+def get_publish_dates(video_ids):
+    dates = {}
+    for i in range(0, len(video_ids), 50):
+        chunk = video_ids[i:i + 50]
+        response = youtube.videos().list(part='snippet', id=','.join(chunk)).execute()
+        for item in response.get('items', []):
+            dates[item['id']] = parse_time(item['snippet']['publishedAt'])
+    return dates
+
+def flatten_thread(item, series):
+    top = item['snippet']['topLevelComment']['snippet']
+    comment_id = item['snippet']['topLevelComment']['id']
+    video_id = top['videoId']
+
+    row = {
+        'series': series,
+        'video_id': video_id,
+        'comment_id': comment_id,
+        'parent_id': '',
+        'author_hash': anonymise(top.get('authorDisplayName', 'unknown')),
+        'text': top.get('textOriginal', ''),
+        'like_count': top.get('likeCount', 0),
+        'published_at': top.get('publishedAt', ''),
+        'updated_at': top.get('updatedAt', ''),
+        'reply_count': item['snippet'].get('totalReplyCount', 0),
+    }
+    rows = [row]
+
+    if 'replies' in item:
+        for reply in item['replies']['comments']:
+            r = reply['snippet']
+            rows.append({
+                'series': series,
+                'video_id': video_id,
+                'comment_id': reply['id'],
+                'parent_id': comment_id,
+                'author_hash': anonymise(r.get('authorDisplayName', 'unknown')),
+                'text': r.get('textOriginal', ''),
+                'like_count': r.get('likeCount', 0),
+                'published_at': r.get('publishedAt', ''),
+                'updated_at': r.get('updatedAt', ''),
+                'reply_count': 0,
+            })
+    return rows
+
