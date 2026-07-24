@@ -90,3 +90,35 @@ def flatten_thread(item, series):
             })
     return rows
 
+def fetch_comments_for_video(video_id, series, target, window_start, window_end):
+    collected = []
+    page_token = None
+    page_count = 0
+
+    while True:
+        retries = 0
+        while True:
+            try:
+                request = youtube.commentThreads().list(
+                    part='snippet,replies',
+                    videoId=video_id,
+                    maxResults=COMMENTS_PER_PAGE,
+                    pageToken=page_token,
+                    order='time',
+                    textFormat='plainText',
+                )
+                response = request.execute()
+                break
+            except HttpError as error:
+                if error.resp.status in (403, 429, 500, 503):
+                    retries += 1
+                    if retries > RETRY_LIMIT:
+                        print('Giving up on video ' + video_id + ' after repeated errors: ' + str(error))
+                        return collected
+                    wait = 2 ** retries
+                    print('API error on video ' + video_id + ', retrying in ' + str(wait) + 's...')
+                    time.sleep(wait)
+                    continue
+                print('Skipping video ' + video_id + ': ' + str(error))
+                return collected
+            
