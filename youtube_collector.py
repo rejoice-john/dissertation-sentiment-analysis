@@ -121,4 +121,25 @@ def fetch_comments_for_video(video_id, series, target, window_start, window_end)
                     continue
                 print('Skipping video ' + video_id + ': ' + str(error))
                 return collected
-            
+
+        for item in response.get('items', []):
+            rows = flatten_thread(item, series)
+            for r in rows:
+                t = parse_time(r['published_at'])
+                if window_start <= t <= window_end:
+                    collected.append(r)
+            if len(collected) >= target:
+                return collected[:target]
+
+        page_count += 1
+        if page_count % PROGRESS_EVERY == 0:
+            print('  ...video ' + video_id + ': checked ' + str(page_count) + ' pages, '
+                  + str(len(collected)) + ' in-window comments so far')
+
+        page_token = response.get('nextPageToken')
+        if not page_token:
+            break
+
+        time.sleep(0.5)
+
+    return collected
