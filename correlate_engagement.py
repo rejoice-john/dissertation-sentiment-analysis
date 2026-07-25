@@ -6,6 +6,11 @@ levels: per-comment (large sample, strong statistical power) and
 per-month (matches the "across the twelve-month window" framing in
 objective 5, but with only 12 data points per series, results here are
 indicative rather than statistically robust on their own).
+
+Since this runs many separate significance tests (60 in total across all
+series/tools/levels), a Benjamini-Hochberg false discovery rate correction
+is applied across all of them at the end -- without it, some "significant"
+results would just be expected by chance from running so many tests.
 '''
 
 import os
@@ -26,6 +31,7 @@ SERIES_NAMES = [
 
 SENTIMENT_FIELDS = ['vader_compound', 'textblob_polarity', 'afinn_score']
 ENGAGEMENT_FIELDS_MONTHLY = ['comment_volume', 'reply_activity', 'avg_likes']
+ALPHA = 0.05   # significance threshold used both before and after correction
 
 
 def load_csv(path):
@@ -37,16 +43,36 @@ def load_csv(path):
         return list(reader)
 
 
+def benjamini_hochberg(p_values):
+    # Adjusts a list of p-values for multiple testing using the
+    # Benjamini-Hochberg false discovery rate procedure. Returns adjusted
+    # p-values in the same order as the input list.
+    m = len(p_values)
+    indexed = list(enumerate(p_values))
+    indexed.sort(key=lambda pair: pair[1])   # sort ascending by p-value
+
+    adjusted = [0.0] * m
+    running_min = 1.0
+    for rank in range(m, 0, -1):
+        original_index, p = indexed[rank - 1]
+        candidate = p * m / rank
+        running_min = min(running_min, candidate)
+        adjusted[original_index] = running_min
+
+    return adjusted
+
+
 def correlate_per_comment(rows, series):
     # Correlates each tool's sentiment score against each comment's own
-    # like count, using every comment as one data point. Only "likes"
-    # applies here -- volume and reply activity are group-level counts,
-    # not something a single comment has on its own.
+    # like count, using every comment as one data point
     results = []
     likes = [int(r.get('like_count', 0)) for r in rows]
     for field in SENTIMENT_FIELDS:
         scores = [float(r.get(field, 0)) for r in rows]
         rho, p_value = spearmanr(scores, likes)
+        print('  [per_comment] ' + series + ' / ' + field + ' vs like_count: '
+              + 'rho=' + str(round(rho, 4)) + ', p=' + str(round(p_value, 4))
+              + ', n=' + str(len(rows)))
         results.append({
             'series': series,
             'level': 'per_comment',
@@ -70,6 +96,9 @@ def correlate_monthly(rows, series):
         for engagement_field in ENGAGEMENT_FIELDS_MONTHLY:
             values = [float(r.get(engagement_field, 0)) for r in rows]
             rho, p_value = spearmanr(scores, values)
+            print('  [monthly] ' + series + ' / ' + avg_field + ' vs ' + engagement_field + ': '
+                  + 'rho=' + str(round(rho, 4)) + ', p=' + str(round(p_value, 4))
+                  + ', n=' + str(len(rows)))
             results.append({
                 'series': series,
                 'level': 'monthly',
@@ -97,7 +126,11 @@ def write_csv(path, rows):
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 all_results = []
 
+print('Running correlations for all series...')
+print('')
+
 for series in SERIES_NAMES:
+    print('--- ' + series + ' ---')
     scored_rows = load_csv(os.path.join(SCORED_DIR, series + '_scored.csv'))
     monthly_rows = load_csv(os.path.join(MONTHLY_DIR, series + '_monthly.csv'))
 
@@ -105,8 +138,42 @@ for series in SERIES_NAMES:
         all_results.extend(correlate_per_comment(scored_rows, series))
     if monthly_rows:
         all_results.extend(correlate_monthly(monthly_rows, series))
+    print('')
 
-    print('Correlated ' + series)
+# --- apply Benjamini-Hochberg correction across all p-values together ---
+print('Applying Benjamini-Hochberg correction across ' + str(len(all_results)) + ' tests...')
+raw_p_values = [r['p_value'] for r in all_results]
+adjusted_p_values = benjamini_hochberg(raw_p_values)
+
+significant_before = 0
+significant_after = 0
+
+for r, adj_p in zip(all_results, adjusted_p_values):
+    r['p_value_adjusted'] = round(adj_p, 4)
+    r['significant_before_correction'] = r['p_value'] < ALPHA
+    r['significant_after_correction'] = adj_p < ALPHA
+    if r['significant_before_correction']:
+        significant_before += 1
+    if r['significant_after_correction']:
+        significant_after += 1
+
+print('')
+print('Summary: ' + str(significant_before) + ' of ' + str(len(all_results))
+      + ' tests significant at p<0.05 before correction.')
+print('Summary: ' + str(significant_after) + ' of ' + str(len(all_results))
+      + ' tests still significant after Benjamini-Hochberg correction.')
+print('')
+
+if significant_after > 0:
+    print('Tests that remain significant after correction:')
+    for r in all_results:
+        if r['significant_after_correction']:
+            print('  ' + r['series'] + ' [' + r['level'] + '] ' + r['sentiment_field']
+                  + ' vs ' + r['engagement_field'] + ': rho=' + str(r['spearman_rho'])
+                  + ', adjusted p=' + str(r['p_value_adjusted']))
+else:
+    print('No tests remain significant after correction.')
 
 write_csv(os.path.join(OUTPUT_DIR, 'engagement_correlation.csv'), all_results)
-print('Done. Correlation results written to ' + OUTPUT_DIR)
+print('')
+print('Done. Correlation results (with correction) written to ' + OUTPUT_DIR)
