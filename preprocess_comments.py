@@ -1,18 +1,18 @@
 '''
 Comment preprocessing pipeline (minimal).
-
+ 
 Reads each series' raw comment CSV and strips URLs, since VADER, TextBlob,
 and AFINN read punctuation, capitalisation, and words like 'not' as
 sentiment signals and lose accuracy if those get stripped out first.
 '''
-
+ 
 import os
 import re
 import csv
-
+ 
 INPUT_DIR = r'C:\Users\rejoi\OneDrive - Coventry University\dissertation-sentiment-analysis\dissertation_data'
 OUTPUT_DIR = os.path.join(INPUT_DIR, 'processed')
-
+ 
 SERIES_NAMES = [
     'baby_reindeer',
     'the_boys_s4',
@@ -20,35 +20,40 @@ SERIES_NAMES = [
     'fallout_s1',
     'emily_in_paris_s4',
 ]
-
-
+ 
+ 
 def strip_urls(text):
     # Removes URLs and collapses any extra whitespace left behind,
     # leaving punctuation, capitalisation, and words intact
     text = re.sub(r'http\S+|www\.\S+', ' ', text)
     text = re.sub(r'\s+', ' ', text).strip()
     return text
-
-
+ 
+ 
 def process_file(series):
     # Reads one series' raw comment CSV and adds a URL-stripped text column
     input_path = os.path.join(INPUT_DIR, series + '.csv')
     if not os.path.exists(input_path):
         print('No raw file found for ' + series + ', skipping.')
         return []
-
+ 
     rows = []
+    urls_stripped = 0
     with open(input_path, 'r', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         for row in reader:
             original = row.get('text', '')
-            row['text_no_urls'] = strip_urls(original)
+            cleaned = strip_urls(original)
+            if cleaned != original:
+                urls_stripped += 1
+            row['text_no_urls'] = cleaned
             rows.append(row)
-
-    print('Processed ' + str(len(rows)) + ' comments for ' + series)
+ 
+    print('  ' + series + ': ' + str(len(rows)) + ' comments read, '
+          + str(urls_stripped) + ' contained a URL that was stripped')
     return rows
-
-
+ 
+ 
 def write_csv(path, rows):
     # Writes the processed rows out to a CSV file
     if not rows:
@@ -58,16 +63,22 @@ def write_csv(path, rows):
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
-
-
+ 
+ 
 # --- strip URLs from comments for all series ---
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 master_rows = []
-
+ 
+print('Preprocessing comments for all series...')
+print('')
+ 
 for series in SERIES_NAMES:
+    print('--- ' + series + ' ---')
     rows = process_file(series)
     write_csv(os.path.join(OUTPUT_DIR, series + '_processed.csv'), rows)
     master_rows.extend(rows)
-
+    print('  Written ' + series + '_processed.csv (' + str(len(rows)) + ' rows)')
+    print('')
+ 
 write_csv(os.path.join(OUTPUT_DIR, 'all_series_processed.csv'), master_rows)
 print('Done. ' + str(len(master_rows)) + ' total comments processed and written to ' + OUTPUT_DIR)
